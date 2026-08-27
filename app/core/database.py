@@ -35,14 +35,14 @@ def init_engine(database_url: str | None = None, *, echo: bool = False) -> Async
         )
     else:
         connect_args = database_ssl_connect_args(url)
+        connect_args = {**connect_args, "timeout": 10}
         engine_kwargs.update(
             pool_pre_ping=True,
             pool_size=5,
             max_overflow=10,
             pool_recycle=1800,
+            connect_args=connect_args,
         )
-        if connect_args:
-            engine_kwargs["connect_args"] = connect_args
         logger.info("PostgreSQL host=%s ssl=%s", database_host(url) or "unknown", bool(connect_args))
     engine = create_async_engine(url, **engine_kwargs)
     async_session_factory = async_sessionmaker(

@@ -120,10 +120,8 @@ def init_firebase() -> firebase_admin.App | None:
         logger.info("Firebase Admin SDK initialized.")
         return _firebase_app
     except Exception as exc:
-        if settings.is_production:
-            raise
         logger.warning(
-            "Firebase Admin SDK was not initialized (%s). Auth endpoints will fail until credentials are set in .env.",
+            "Firebase Admin SDK was not initialized (%s). Auth endpoints will fail until credentials are valid.",
             type(exc).__name__,
         )
         _firebase_app = None

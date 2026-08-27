@@ -6,7 +6,10 @@ from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.core.constants import Environment
-from app.core.db_url import is_local_database_host, normalize_database_url, stripped_database_url
+from app.core.db_url import (
+    is_local_database_host,
+    resolve_database_url,
+)
 
 
 class Settings(BaseSettings):
@@ -50,7 +53,7 @@ class Settings(BaseSettings):
     @field_validator("DATABASE_URL", "TEST_DATABASE_URL")
     @classmethod
     def normalize_database_urls(cls, value: str) -> str:
-        return stripped_database_url(normalize_database_url(value))
+        return resolve_database_url(value)
 
     @field_validator("FIREBASE_PRIVATE_KEY")
     @classmethod
@@ -92,11 +95,12 @@ class Settings(BaseSettings):
         return bool(hosts) and "*" not in hosts
 
     def assert_database_configured(self) -> None:
-        if self.is_production and is_local_database_host(self.DATABASE_URL):
+        if is_local_database_host(self.DATABASE_URL):
             raise RuntimeError(
-                "DATABASE_URL points at localhost. On Render/Railway/Fly you must attach a "
-                "PostgreSQL instance and set DATABASE_URL to that host (not 127.0.0.1:5432). "
-                "Use the provider URL; postgres:// is accepted and converted for asyncpg."
+                "DATABASE_URL points at localhost. In Railway: open the backend service → "
+                "Variables → delete DATABASE_URL if it contains localhost → New Variable → "
+                "click Reference and select Postgres DATABASE_URL "
+                "(postgres.railway.internal), then redeploy."
             )
 
     @property

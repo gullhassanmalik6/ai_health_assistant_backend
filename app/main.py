@@ -1,6 +1,7 @@
 """AI Doctor API application factory."""
 
 from contextlib import asynccontextmanager
+import asyncio
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -14,9 +15,11 @@ from app.core.config import settings
 from app.core.database import dispose_engine, init_engine
 from app.core.error_handlers import register_exception_handlers
 from app.core.firebase import close_http_client, init_firebase
-from app.core.logging import setup_logging
+from app.core.logging import get_logger, setup_logging
 from app.core.middleware import RequestContextMiddleware
 from app.core.rate_limit import limiter
+
+logger = get_logger(__name__)
 
 OPENAPI_TAGS = [
     {
@@ -32,17 +35,30 @@ OPENAPI_TAGS = [
 ]
 
 
+def _upgrade_database() -> None:
+    from alembic import command
+    from alembic.config import Config
+
+    command.upgrade(Config("alembic.ini"), "head")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     setup_logging()
-    init_engine()
-    if settings.is_test:
-        from app.core.database import get_engine
-        from app.models import Base
-
-        async with get_engine().begin() as connection:
-            await connection.run_sync(Base.metadata.create_all)
     init_firebase()
+    try:
+        init_engine()
+        if settings.is_test:
+            from app.core.database import get_engine
+            from app.models import Base
+
+            async with get_engine().begin() as connection:
+                await connection.run_sync(Base.metadata.create_all)
+        else:
+            await asyncio.to_thread(_upgrade_database)
+            logger.info("Database migrations applied.")
+    except Exception as exc:
+        logger.error("Database startup failed: %s", exc)
     yield
     await close_http_client()
     await dispose_engine()
