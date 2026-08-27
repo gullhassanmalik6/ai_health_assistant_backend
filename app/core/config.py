@@ -2,10 +2,11 @@
 
 from functools import lru_cache
 
-from pydantic import Field, field_validator
+from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.core.constants import Environment
+from app.core.db_url import is_local_database_host, normalize_database_url, stripped_database_url
 
 
 class Settings(BaseSettings):
@@ -14,6 +15,7 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         extra="ignore",
         case_sensitive=True,
+        populate_by_name=True,
     )
 
     APP_NAME: str = "AI Doctor API"
@@ -21,7 +23,10 @@ class Settings(BaseSettings):
     ENVIRONMENT: Environment = Environment.DEVELOPMENT
     LOG_LEVEL: str = "INFO"
 
-    DATABASE_URL: str = "postgresql+asyncpg://aidoctor:aidoctor@localhost:5432/aidoctor"
+    DATABASE_URL: str = Field(
+        default="postgresql+asyncpg://aidoctor:aidoctor@localhost:5432/aidoctor",
+        validation_alias=AliasChoices("DATABASE_URL", "POSTGRES_URL", "POSTGRESQL_URL"),
+    )
     TEST_DATABASE_URL: str = (
         "postgresql+asyncpg://aidoctor:aidoctor@localhost:5432/aidoctor_test"
     )
@@ -41,6 +46,11 @@ class Settings(BaseSettings):
     AUTH_RATE_LIMIT_PER_MINUTE: int = 10
 
     REQUEST_TIMEOUT_SECONDS: float = 15.0
+
+    @field_validator("DATABASE_URL", "TEST_DATABASE_URL")
+    @classmethod
+    def normalize_database_urls(cls, value: str) -> str:
+        return stripped_database_url(normalize_database_url(value))
 
     @field_validator("FIREBASE_PRIVATE_KEY")
     @classmethod
@@ -72,6 +82,22 @@ class Settings(BaseSettings):
         if self.is_production and ("*" in hosts or not hosts):
             raise ValueError("ALLOWED_HOSTS must be an explicit host list in production.")
         return hosts
+
+    @property
+    def use_trusted_host_middleware(self) -> bool:
+        hosts = set(self.allowed_hosts_list)
+        loopback_only = hosts <= {"localhost", "127.0.0.1", "::1"}
+        if loopback_only:
+            return False
+        return bool(hosts) and "*" not in hosts
+
+    def assert_database_configured(self) -> None:
+        if self.is_production and is_local_database_host(self.DATABASE_URL):
+            raise RuntimeError(
+                "DATABASE_URL points at localhost. On Render/Railway/Fly you must attach a "
+                "PostgreSQL instance and set DATABASE_URL to that host (not 127.0.0.1:5432). "
+                "Use the provider URL; postgres:// is accepted and converted for asyncpg."
+            )
 
     @property
     def alembic_sync_database_url(self) -> str:

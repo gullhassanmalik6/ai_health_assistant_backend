@@ -74,7 +74,7 @@ def create_app() -> FastAPI:
         allow_headers=["Authorization", "Content-Type", "X-Request-ID"],
         expose_headers=["X-Request-ID"],
     )
-    if settings.allowed_hosts_list and "*" not in settings.allowed_hosts_list:
+    if settings.use_trusted_host_middleware:
         app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.allowed_hosts_list)
 
     register_exception_handlers(app)

@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import (
 )
 
 from app.core.config import settings
+from app.core.db_url import database_host, database_ssl_connect_args
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
@@ -22,6 +23,7 @@ def init_engine(database_url: str | None = None, *, echo: bool = False) -> Async
     """Create the process-wide async engine. Called once during application startup."""
     global engine, async_session_factory
 
+    settings.assert_database_configured()
     url = database_url or settings.DATABASE_URL
     engine_kwargs: dict = {"echo": echo}
     if url.startswith("sqlite"):
@@ -32,12 +34,16 @@ def init_engine(database_url: str | None = None, *, echo: bool = False) -> Async
             poolclass=StaticPool,
         )
     else:
+        connect_args = database_ssl_connect_args(url)
         engine_kwargs.update(
             pool_pre_ping=True,
-            pool_size=10,
-            max_overflow=20,
+            pool_size=5,
+            max_overflow=10,
             pool_recycle=1800,
         )
+        if connect_args:
+            engine_kwargs["connect_args"] = connect_args
+        logger.info("PostgreSQL host=%s ssl=%s", database_host(url) or "unknown", bool(connect_args))
     engine = create_async_engine(url, **engine_kwargs)
     async_session_factory = async_sessionmaker(
         bind=engine,

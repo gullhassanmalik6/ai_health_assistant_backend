@@ -8,9 +8,10 @@ from logging.config import fileConfig
 from alembic import context
 from sqlalchemy import pool
 from sqlalchemy.engine import Connection
-from sqlalchemy.ext.asyncio import async_engine_from_config
+from sqlalchemy.ext.asyncio import create_async_engine
 
 from app.core.config import settings
+from app.core.db_url import database_ssl_connect_args
 from app.models import Base
 
 config = context.config
@@ -46,10 +47,11 @@ def do_run_migrations(connection: Connection) -> None:
 
 
 async def run_async_migrations() -> None:
-    connectable = async_engine_from_config(
-        config.get_section(config.config_ini_section, {}),
-        prefix="sqlalchemy.",
+    settings.assert_database_configured()
+    connectable = create_async_engine(
+        settings.DATABASE_URL,
         poolclass=pool.NullPool,
+        connect_args=database_ssl_connect_args(settings.DATABASE_URL),
     )
     async with connectable.connect() as connection:
         await connection.run_sync(do_run_migrations)

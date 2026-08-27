@@ -154,6 +154,22 @@ Compose starts PostgreSQL and the API. Secrets come from `.env`, not from `docke
 
 ---
 
+## Cloud deployment (Render / Railway / Fly)
+
+The crash `Connect call failed ('127.0.0.1', 5432)` means the API container tried to open Postgres on **itself**. There is no database process in the web service.
+
+1. Create a **PostgreSQL** addon on the same platform (or Neon/Supabase).
+2. Copy that database URL into the API service env var `DATABASE_URL`.
+   Provider URLs such as `postgres://user:pass@host:5432/db` are accepted.
+3. Do **not** leave `DATABASE_URL` pointing at `localhost` or `127.0.0.1`.
+4. Set `ENVIRONMENT=production`.
+5. Set `CORS_ALLOWED_ORIGINS` to your frontend origin.
+6. Set `ALLOWED_HOSTS` to your API hostname (example: `ai-doctor-api.onrender.com`).
+
+Internal Docker Compose still uses host `db`, which is correct for local compose only.
+
+---
+
 ## API documentation
 
 - Swagger UI: [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
