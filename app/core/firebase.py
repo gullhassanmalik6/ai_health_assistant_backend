@@ -392,3 +392,24 @@ def get_firebase_user(uid: str) -> auth.UserRecord | None:
         return auth.get_user(uid)
     except UserNotFoundError:
         return None
+
+
+def set_firebase_email_verified(uid: str, verified: bool = True) -> None:
+    if not uid:
+        return
+    try:
+        auth.update_user(uid, email_verified=verified)
+    except UserNotFoundError:
+        logger.info("Firebase identity missing while setting email_verified.")
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Failed to set Firebase email_verified: %s", type(exc).__name__)
+
+
+def update_firebase_password(uid: str, password: str) -> None:
+    try:
+        auth.update_user(uid, password=password)
+    except UserNotFoundError as exc:
+        raise FirebaseServiceError("Identity was not found.") from exc
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Failed to update Firebase password: %s", type(exc).__name__)
+        raise FirebaseServiceError("Failed to update password.") from exc

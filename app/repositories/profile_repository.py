@@ -44,7 +44,7 @@ class AllergyRepository:
         result = await self.session.execute(
             select(UserAllergy)
             .where(UserAllergy.user_id == user_id)
-            .order_by(UserAllergy.created_at.desc())
+            .order_by(UserAllergy.sort_order.asc(), UserAllergy.created_at.asc())
         )
         return list(result.scalars().all())
 
@@ -87,7 +87,7 @@ class ConditionRepository:
         result = await self.session.execute(
             select(UserCondition)
             .where(UserCondition.user_id == user_id)
-            .order_by(UserCondition.created_at.desc())
+            .order_by(UserCondition.sort_order.asc(), UserCondition.created_at.asc())
         )
         return list(result.scalars().all())
 

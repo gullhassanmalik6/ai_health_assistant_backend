@@ -16,7 +16,7 @@ def test_ready(client):
     assert response.json()["success"] is True
 
 
-def test_register_creates_user_without_storing_password(client):
+def test_register_creates_user_without_tokens(client):
     response = client.post(
         "/api/v1/auth/register",
         json={"email": "new@example.com", "password": "Sup3rSecret", "name": "New User"},
@@ -24,11 +24,11 @@ def test_register_creates_user_without_storing_password(client):
     assert response.status_code == 201
     body = response.json()
     assert body["success"] is True
-    assert body["data"]["user"]["email"] == "new@example.com"
-    assert body["data"]["user"]["is_guest"] is False
-    assert body["data"]["email_verified"] is False
-    assert "password" not in body["data"]["user"]
-    assert body["data"]["tokens"]["id_token"]
+    assert body["data"]["email"] == "new@example.com"
+    assert body["data"]["verification_required"] is True
+    assert body["data"]["resend_available_in"] == 60
+    assert "tokens" not in body["data"]
+    assert "user" not in body["data"]
 
 
 def test_login_success(client):
@@ -36,6 +36,11 @@ def test_login_success(client):
         "/api/v1/auth/register",
         json={"email": "login@example.com", "password": "Sup3rSecret", "name": "Login User"},
     )
+    verify = client.post(
+        "/api/v1/auth/verify-email",
+        json={"email": "login@example.com", "code": "123456"},
+    )
+    assert verify.status_code == 200
     response = client.post(
         "/api/v1/auth/login",
         json={"email": "login@example.com", "password": "Sup3rSecret"},
@@ -44,6 +49,8 @@ def test_login_success(client):
     body = response.json()
     assert body["success"] is True
     assert body["data"]["user"]["email"] == "login@example.com"
+    assert body["data"]["user"]["profile_setup_seen"] is False
+    assert body["data"]["tokens"]["id_token"]
 
 
 def test_login_invalid_password(client):

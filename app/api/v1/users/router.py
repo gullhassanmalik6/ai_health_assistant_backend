@@ -41,6 +41,7 @@ async def patch_me(
         user,
         name=body.name,
         onboarding_completed=body.onboarding_completed,
+        profile_setup_seen=body.profile_setup_seen,
     )
     completion = compute_completion(updated)
     return success_payload(

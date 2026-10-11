@@ -9,14 +9,22 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.constants import (
+    BLOOD_GROUP_UNKNOWN_COUNTS_AS_FILLED,
+    HEALTH_LIST_MAX_ITEMS,
+    HEALTH_LIST_NAME_MAX_LENGTH,
+    MAX_AGE_YEARS_PERSONAL,
+    PROFILE_COMPLETION_COUNT_ALLERGIES,
+    PROFILE_COMPLETION_COUNT_CONDITIONS,
+    PROFILE_COMPLETION_COUNT_PHOTO,
     PROFILE_COMPLETION_FIELDS,
     AllergySeverity,
+    BloodGroup,
     ConditionStatus,
     HeightUnit,
     MedicationRoute,
     WeightUnit,
 )
-from app.core.exceptions import NotFoundError
+from app.core.exceptions import NotFoundError, ValidationAppError
 from app.models.user import User
 from app.models.user_profile import UserAllergy, UserCondition, UserMedication, UserProfile
 from app.repositories.profile_repository import (
@@ -82,6 +90,7 @@ class ProfileService:
         profile.emergency_contact_name = None
         profile.emergency_contact_phone = None
         profile.profile_photo_url = None
+        profile.profile_photo_key = None
         await self.profiles.save(profile)
         await self.allergies.delete_all_for_user(user.id)
         await self.conditions.delete_all_for_user(user.id)
@@ -91,22 +100,31 @@ class ProfileService:
 
     def completion(self, user: User) -> dict[str, Any]:
         profile = user.profile
+        blood_group = profile.blood_group if profile else None
+        blood_filled = bool(blood_group) and (
+            BLOOD_GROUP_UNKNOWN_COUNTS_AS_FILLED or blood_group != BloodGroup.UNKNOWN
+        )
         checks = {
             "name": bool(user.name and user.name.strip()),
             "gender": bool(profile and profile.gender),
             "date_of_birth": bool(profile and profile.date_of_birth),
             "height": bool(profile and profile.height_value is not None and profile.height_unit),
             "weight": bool(profile and profile.weight_value is not None and profile.weight_unit),
-            "blood_group": bool(profile and profile.blood_group),
-            "emergency_contact": bool(
-                profile
-                and profile.emergency_contact_name
-                and profile.emergency_contact_phone
-            ),
+            "blood_group": blood_filled,
+            "profile_photo": bool(profile and (profile.profile_photo_key or profile.profile_photo_url)),
+            "allergies": bool(user.allergies),
+            "conditions": bool(user.conditions),
         }
-        completed = [field for field in PROFILE_COMPLETION_FIELDS if checks[field]]
-        missing = [field for field in PROFILE_COMPLETION_FIELDS if not checks[field]]
-        total = len(PROFILE_COMPLETION_FIELDS)
+        fields = list(PROFILE_COMPLETION_FIELDS)
+        if PROFILE_COMPLETION_COUNT_PHOTO and "profile_photo" not in fields:
+            fields.append("profile_photo")
+        if PROFILE_COMPLETION_COUNT_ALLERGIES and "allergies" not in fields:
+            fields.append("allergies")
+        if PROFILE_COMPLETION_COUNT_CONDITIONS and "conditions" not in fields:
+            fields.append("conditions")
+        completed = [field for field in fields if checks[field]]
+        missing = [field for field in fields if not checks[field]]
+        total = len(fields)
         percentage = int(round((len(completed) / total) * 100)) if total else 0
         return {
             "percentage": percentage,
@@ -176,8 +194,128 @@ class ProfileService:
         if assigned("profile_photo_url"):
             profile.profile_photo_url = payload.get("profile_photo_url")
 
+    async def update_personal(self, user: User, payload: dict[str, Any]) -> User:
+        profile = await self.get_or_create_profile(user)
+        if "name" in payload:
+            name = payload["name"]
+            if name is None or not str(name).strip():
+                raise ValidationAppError(
+                    "Please check the highlighted fields.",
+                    details={"name": "Enter your full name"},
+                )
+            user.name = str(name).strip()
+        if "date_of_birth" in payload:
+            dob = payload.get("date_of_birth")
+            profile.date_of_birth = (
+                validate_date_of_birth(dob, max_age=MAX_AGE_YEARS_PERSONAL, field="date_of_birth") if dob else None
+            )
+        if "gender" in payload:
+            gender = payload.get("gender")
+            profile.gender = gender.value if hasattr(gender, "value") else gender
+        await self.users.save(user)
+        await self.profiles.save(profile)
+        loaded = await self.users.get_by_id(user.id)
+        return loaded or user
+
+    async def update_health(self, user: User, payload: dict[str, Any]) -> User:
+        profile = await self.get_or_create_profile(user)
+        health_fields = {key: payload[key] for key in ("height", "weight", "blood_group") if key in payload}
+        if health_fields:
+            self._apply_profile_fields(profile, health_fields, partial=True)
+            await self.profiles.save(profile)
+        if "allergies" in payload:
+            await self.replace_allergy_names(user, payload["allergies"] or [])
+        if "conditions" in payload:
+            await self.replace_condition_names(user, payload["conditions"] or [])
+        await self.session.flush()
+        await self.session.refresh(user, attribute_names=["profile", "allergies", "conditions"])
+        loaded = await self.users.get_by_id(user.id)
+        return loaded or user
+
+    def _normalize_health_names(self, names: list[str], *, field: str) -> list[str]:
+        normalized: list[str] = []
+        seen: set[str] = set()
+        for raw in names:
+            cleaned = (raw or "").strip()
+            if not cleaned:
+                raise ValidationAppError(
+                    "Please check the highlighted fields.",
+                    details={field: "Enter a name"},
+                )
+            if len(cleaned) > HEALTH_LIST_NAME_MAX_LENGTH:
+                raise ValidationAppError(
+                    "Please check the highlighted fields.",
+                    details={field: "Each name must be 100 characters or fewer"},
+                )
+            key = cleaned.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            normalized.append(cleaned)
+        if len(normalized) > HEALTH_LIST_MAX_ITEMS:
+            raise ValidationAppError(
+                "Please check the highlighted fields.",
+                details={field: "You can add at most 50 items"},
+            )
+        return normalized
+
+    async def replace_allergy_names(self, user: User, names: list[str]) -> None:
+        normalized = self._normalize_health_names(names, field="allergies")
+        existing = await self.allergies.list_for_user(user.id)
+        by_key = {item.allergy_name.lower(): item for item in existing}
+        keep_ids: set[uuid.UUID] = set()
+        for index, name in enumerate(normalized):
+            current = by_key.get(name.lower())
+            if current is not None:
+                current.allergy_name = name
+                current.sort_order = index
+                await self.allergies.save(current)
+                keep_ids.add(current.id)
+            else:
+                created = await self.allergies.create(
+                    UserAllergy(
+                        user_id=user.id,
+                        allergy_name=name,
+                        severity=AllergySeverity.UNKNOWN.value,
+                        sort_order=index,
+                    )
+                )
+                keep_ids.add(created.id)
+        for item in existing:
+            if item.id not in keep_ids:
+                await self.allergies.delete(item)
+
+    async def replace_condition_names(self, user: User, names: list[str]) -> None:
+        normalized = self._normalize_health_names(names, field="conditions")
+        existing = await self.conditions.list_for_user(user.id)
+        by_key = {item.condition_name.lower(): item for item in existing}
+        keep_ids: set[uuid.UUID] = set()
+        for index, name in enumerate(normalized):
+            current = by_key.get(name.lower())
+            if current is not None:
+                current.condition_name = name
+                current.sort_order = index
+                await self.conditions.save(current)
+                keep_ids.add(current.id)
+            else:
+                created = await self.conditions.create(
+                    UserCondition(
+                        user_id=user.id,
+                        condition_name=name,
+                        status=None,
+                        sort_order=index,
+                    )
+                )
+                keep_ids.add(created.id)
+        for item in existing:
+            if item.id not in keep_ids:
+                await self.conditions.delete(item)
+
     async def create_allergy(self, user: User, data: dict[str, Any]) -> UserAllergy:
-        allergy = UserAllergy(user_id=user.id, **self._allergy_fields(data))
+        existing = await self.allergies.list_for_user(user.id)
+        fields = self._allergy_fields(data)
+        fields["sort_order"] = len(existing)
+        allergy = UserAllergy(user_id=user.id, **fields)
         return await self.allergies.create(allergy)
 
     async def list_allergies(self, user: User) -> list[UserAllergy]:
@@ -198,7 +336,10 @@ class ProfileService:
         await self.allergies.delete(allergy)
 
     async def create_condition(self, user: User, data: dict[str, Any]) -> UserCondition:
-        condition = UserCondition(user_id=user.id, **self._condition_fields(data))
+        existing = await self.conditions.list_for_user(user.id)
+        fields = self._condition_fields(data)
+        fields["sort_order"] = len(existing)
+        condition = UserCondition(user_id=user.id, **fields)
         return await self.conditions.create(condition)
 
     async def list_conditions(self, user: User) -> list[UserCondition]:

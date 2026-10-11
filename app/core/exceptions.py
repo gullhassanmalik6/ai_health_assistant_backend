@@ -103,11 +103,34 @@ class ValidationAppError(AppError):
 
 
 class RateLimitError(AppError):
-    def __init__(self, message: str = "Too many requests. Please try again later.") -> None:
+    def __init__(
+        self,
+        message: str = "Too many requests. Please try again later.",
+        *,
+        error_code: ErrorCode = ErrorCode.RATE_LIMITED,
+        details: Any = None,
+    ) -> None:
         super().__init__(
             message,
-            error_code=ErrorCode.RATE_LIMITED,
+            error_code=error_code,
             status_code=429,
+            details=details,
+        )
+
+
+class BadRequestError(AppError):
+    def __init__(
+        self,
+        message: str,
+        *,
+        error_code: ErrorCode,
+        details: Any = None,
+    ) -> None:
+        super().__init__(
+            message,
+            error_code=error_code,
+            status_code=400,
+            details=details,
         )
 
 

@@ -7,11 +7,15 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.core.constants import (
+    HEALTH_LIST_MAX_ITEMS,
+    HEALTH_LIST_NAME_MAX_LENGTH,
+    MAX_AGE_YEARS_PERSONAL,
     MAX_ALLERGY_NAME_LENGTH,
     MAX_CONDITION_NAME_LENGTH,
     MAX_MEDICATION_NAME_LENGTH,
     MAX_NAME_LENGTH,
     MAX_NOTES_LENGTH,
+    PERSONAL_NAME_MAX_LENGTH,
     AllergySeverity,
     BloodGroup,
     ConditionStatus,
@@ -96,6 +100,7 @@ class ProfileData(BaseModel):
     emergency_contact_name: str | None = None
     emergency_contact_phone: str | None = None
     profile_photo_url: str | None = None
+    profile_photo_expires_at: str | None = None
     onboarding_completed: bool = False
     profile_completed: bool = False
     profile_completion_percentage: int = 0
@@ -138,6 +143,56 @@ class ProfileWriteRequest(BaseModel):
         if value is None or value.strip() == "":
             return None
         return validate_phone_number(value)
+
+
+class PersonalPatchRequest(BaseModel):
+    name: str | None = Field(default=None, max_length=PERSONAL_NAME_MAX_LENGTH)
+    date_of_birth: date | None = None
+    gender: Gender | None = None
+
+    @field_validator("name")
+    @classmethod
+    def check_name(cls, value: str | None) -> str | None:
+        if value is None:
+            raise ValueError("Enter your full name")
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("Enter your full name")
+        if len(cleaned) > PERSONAL_NAME_MAX_LENGTH:
+            raise ValueError("Name must be 1 to 100 characters")
+        return cleaned
+
+    @field_validator("date_of_birth")
+    @classmethod
+    def check_dob(cls, value: date | None) -> date | None:
+        if value is None:
+            return None
+        return validate_date_of_birth(value, max_age=MAX_AGE_YEARS_PERSONAL, field="date_of_birth")
+
+
+class HealthPatchRequest(BaseModel):
+    height: HeightMeasurement | None = None
+    weight: WeightMeasurement | None = None
+    blood_group: BloodGroup | None = None
+    allergies: list[str] | None = None
+    conditions: list[str] | None = None
+
+    @field_validator("allergies", "conditions")
+    @classmethod
+    def check_names(cls, value: list[str] | None) -> list[str] | None:
+        if value is None:
+            return None
+        if len(value) > HEALTH_LIST_MAX_ITEMS:
+            raise ValueError("You can add at most 50 items")
+        cleaned: list[str] = []
+        for item in value:
+            name = (item or "").strip()
+            if not name:
+                raise ValueError("Enter a name")
+            if len(name) > HEALTH_LIST_NAME_MAX_LENGTH:
+                raise ValueError("Each name must be 100 characters or fewer")
+            cleaned.append(name)
+        return cleaned
 
 
 class ProfilePutRequest(ProfileWriteRequest):

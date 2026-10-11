@@ -1,8 +1,10 @@
 """ORM models. Importing this package registers every table with Base.metadata."""
 
 from app.models.base import Base
+from app.models.content import Category, Concern, DailyTip, HealthTip
 from app.models.user import User
 from app.models.user_profile import UserAllergy, UserCondition, UserMedication, UserProfile
+from app.models.verification import EmailVerificationCode
 
 __all__ = [
     "Base",
@@ -11,4 +13,9 @@ __all__ = [
     "UserAllergy",
     "UserCondition",
     "UserMedication",
+    "EmailVerificationCode",
+    "Category",
+    "Concern",
+    "HealthTip",
+    "DailyTip",
 ]

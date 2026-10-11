@@ -6,7 +6,7 @@ import uuid
 from datetime import date, datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Date, DateTime, Float, ForeignKey, String, Text
+from sqlalchemy import Date, DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
@@ -36,6 +36,7 @@ class UserProfile(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     emergency_contact_name: Mapped[str | None] = mapped_column(String(150), nullable=True)
     emergency_contact_phone: Mapped[str | None] = mapped_column(String(32), nullable=True)
     profile_photo_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    profile_photo_key: Mapped[str | None] = mapped_column(String(512), nullable=True)
 
     user: Mapped[User] = relationship("User", back_populates="profile")
 
@@ -52,6 +53,7 @@ class UserAllergy(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     reaction: Mapped[str | None] = mapped_column(String(255), nullable=True)
     severity: Mapped[str | None] = mapped_column(String(32), nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
     user: Mapped[User] = relationship("User", back_populates="allergies")
 
@@ -68,6 +70,7 @@ class UserCondition(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     diagnosed_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     status: Mapped[str | None] = mapped_column(String(32), nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
     user: Mapped[User] = relationship("User", back_populates="conditions")
 

@@ -1,0 +1,1 @@
+"""Content catalog tests."""

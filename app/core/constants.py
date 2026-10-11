@@ -32,6 +32,7 @@ class BloodGroup(StrEnum):
     AB_NEGATIVE = "AB-"
     O_POSITIVE = "O+"
     O_NEGATIVE = "O-"
+    UNKNOWN = "unknown"
 
 
 class HeightUnit(StrEnum):
@@ -67,6 +68,16 @@ class MedicationRoute(StrEnum):
     OTHER = "other"
 
 
+class TintKey(StrEnum):
+    BLUE = "blue"
+    CORAL = "coral"
+    AMBER = "amber"
+    PURPLE = "purple"
+    GREEN = "green"
+    TEAL = "teal"
+    PINK = "pink"
+
+
 class ErrorCode(StrEnum):
     AUTH_TOKEN_MISSING = "AUTH_TOKEN_MISSING"
     AUTH_TOKEN_INVALID = "AUTH_TOKEN_INVALID"
@@ -80,6 +91,12 @@ class ErrorCode(StrEnum):
     AUTH_EMAIL_NOT_VERIFIED = "AUTH_EMAIL_NOT_VERIFIED"
     AUTH_PROVIDER_MISMATCH = "AUTH_PROVIDER_MISMATCH"
     AUTH_WEAK_PASSWORD = "AUTH_WEAK_PASSWORD"
+    AUTH_PASSWORD_NOT_SUPPORTED = "AUTH_PASSWORD_NOT_SUPPORTED"
+    AUTH_INVALID_CURRENT_PASSWORD = "AUTH_INVALID_CURRENT_PASSWORD"
+    AUTH_PASSWORD_UNCHANGED = "AUTH_PASSWORD_UNCHANGED"
+    AUTH_CODE_INVALID = "AUTH_CODE_INVALID"
+    AUTH_CODE_EXPIRED = "AUTH_CODE_EXPIRED"
+    AUTH_CODE_ATTEMPTS_EXCEEDED = "AUTH_CODE_ATTEMPTS_EXCEEDED"
     FORBIDDEN = "FORBIDDEN"
     NOT_FOUND = "NOT_FOUND"
     CONFLICT = "CONFLICT"
@@ -98,15 +115,25 @@ FIREBASE_PROVIDER_MAP = {
 }
 
 # Fields that contribute to backend-calculated profile completion.
+# Emergency contact is stored but not counted — no screen collects it.
 PROFILE_COMPLETION_FIELDS = (
     "name",
-    "gender",
     "date_of_birth",
+    "gender",
     "height",
     "weight",
     "blood_group",
-    "emergency_contact",
 )
+
+# Pending product decisions — flip these in one place when the app owner decides.
+PROFILE_COMPLETION_COUNT_PHOTO = False
+PROFILE_COMPLETION_COUNT_ALLERGIES = False
+PROFILE_COMPLETION_COUNT_CONDITIONS = False
+BLOOD_GROUP_UNKNOWN_COUNTS_AS_FILLED = True
+
+# Pending: Change Password screen checks for a number; Sign Up currently does not.
+# Keep both on the same rule. Flip this when product decides.
+PASSWORD_REQUIRE_NUMBER = False
 
 # Physiological sanity bounds used by validators.
 HEIGHT_BOUNDS = {
@@ -120,13 +147,27 @@ WEIGHT_BOUNDS = {
 }
 
 MAX_AGE_YEARS = 130
+MAX_AGE_YEARS_PERSONAL = 120
 MIN_PASSWORD_LENGTH = 8
 MAX_PASSWORD_LENGTH = 128
 MAX_NAME_LENGTH = 150
+PERSONAL_NAME_MAX_LENGTH = 100
 MAX_NOTES_LENGTH = 2000
 MAX_MEDICATION_NAME_LENGTH = 200
 MAX_ALLERGY_NAME_LENGTH = 200
 MAX_CONDITION_NAME_LENGTH = 200
+HEALTH_LIST_NAME_MAX_LENGTH = 100
+HEALTH_LIST_MAX_ITEMS = 50
+
+PHOTO_MAX_BYTES = 5 * 1024 * 1024
+PHOTO_ALLOWED_CONTENT_TYPES = ("image/jpeg", "image/jpg", "image/png", "image/webp")
+PHOTO_SIGNED_URL_TTL_SECONDS = 3600
+
+VERIFICATION_CODE_LENGTH = 6
+VERIFICATION_CODE_TTL_SECONDS = 10 * 60
+VERIFICATION_RESEND_COOLDOWN_SECONDS = 60
+VERIFICATION_MAX_ATTEMPTS = 5
+VERIFICATION_EMAIL_SUBJECT = "Your AI Doctor verification code"
 
 GENERIC_PASSWORD_RESET_MESSAGE = (
     "If the account exists, password reset instructions have been sent."

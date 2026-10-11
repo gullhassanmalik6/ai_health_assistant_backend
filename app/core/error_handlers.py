@@ -11,6 +11,7 @@ from app.core.constants import ErrorCode
 from app.core.exceptions import AppError
 from app.core.logging import get_logger
 from app.utils.response import error_payload
+from app.utils.validation_errors import details_from_pydantic_errors
 
 logger = get_logger(__name__)
 
@@ -30,24 +31,14 @@ def register_exception_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(RequestValidationError)
     async def validation_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
-        safe_details = []
-        for error in exc.errors():
-            safe_details.append(
-                {
-                    "loc": error.get("loc"),
-                    "msg": error.get("msg"),
-                    "type": error.get("type"),
-                }
-            )
-        logger.info(
-            "validation_error",
-        )
+        details = details_from_pydantic_errors(exc.errors())
+        logger.info("validation_error")
         return JSONResponse(
             status_code=422,
             content=error_payload(
-                "Request validation failed.",
+                "Please check the highlighted fields.",
                 ErrorCode.VALIDATION_ERROR,
-                safe_details,
+                details,
             ),
         )
 

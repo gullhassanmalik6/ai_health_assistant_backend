@@ -24,11 +24,14 @@ class UserService:
         *,
         name: str | None = None,
         onboarding_completed: bool | None = None,
+        profile_setup_seen: bool | None = None,
     ) -> User:
         if name is not None:
             user.name = name.strip()
         if onboarding_completed is not None:
             user.onboarding_completed = onboarding_completed
+        if profile_setup_seen is not None:
+            user.profile_setup_seen = profile_setup_seen
         await self.users.save(user)
         loaded = await self.users.get_by_id(user.id)
         return loaded or user

@@ -9,10 +9,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core import firebase as firebase_auth
 from app.core.constants import (
     GENERIC_PASSWORD_RESET_MESSAGE,
+    VERIFICATION_RESEND_COOLDOWN_SECONDS,
     AuthProvider,
     ErrorCode,
 )
-from app.core.exceptions import AuthenticationError, AuthorizationError, FirebaseServiceError
+from app.core.exceptions import (
+    AuthenticationError,
+    AuthorizationError,
+    BadRequestError,
+    ConflictError,
+    FirebaseServiceError,
+)
 from app.core.firebase import FirebaseSession, FirebaseTokenClaims
 from app.core.logging import get_logger
 from app.core.security import as_utc, auth_time_to_datetime, utcnow
@@ -37,8 +44,17 @@ class AuthService:
         self.users = UserRepository(session)
         self.profiles = ProfileRepository(session)
 
-    async def register(self, *, email: str, password: str, name: str) -> AuthResult:
+    async def register(self, *, email: str, password: str, name: str) -> dict:
+        from app.services.verification_service import VerificationService
+
         normalized_email = email.strip().lower()
+        existing = await self.users.get_by_email(normalized_email)
+        if existing is not None:
+            raise ConflictError(
+                "An account with this email already exists.",
+                error_code=ErrorCode.AUTH_ACCOUNT_EXISTS,
+            )
+
         firebase_session: FirebaseSession | None = None
         try:
             firebase_session = await firebase_auth.sign_up_with_email(
@@ -50,9 +66,14 @@ class AuthService:
                 name=name.strip(),
                 provider=AuthProvider.EMAIL,
                 is_guest=False,
-                email_verified=firebase_session.email_verified,
+                email_verified=False,
             )
-            return AuthResult(user=user, session=firebase_session)
+            await VerificationService(self.session).send_code(user, force=True)
+            return {
+                "email": normalized_email,
+                "verification_required": True,
+                "resend_available_in": VERIFICATION_RESEND_COOLDOWN_SECONDS,
+            }
         except Exception:
             if firebase_session and firebase_session.uid:
                 try:
@@ -62,6 +83,8 @@ class AuthService:
             raise
 
     async def login(self, *, email: str, password: str) -> AuthResult:
+        from app.services.verification_service import VerificationService
+
         firebase_session = await firebase_auth.sign_in_with_email(email.strip().lower(), password)
         claims = firebase_auth.verify_id_token(firebase_session.id_token, check_revoked=False)
         user = await self.upsert_from_claims(
@@ -69,6 +92,62 @@ class AuthService:
             name=firebase_session.display_name,
             mark_login=True,
         )
+        if user.auth_provider == AuthProvider.EMAIL.value and not user.email_verified:
+            sent, remaining = await VerificationService(self.session).send_for_login(user)
+            await self.session.commit()
+            raise AuthorizationError(
+                "Verify your email to log in.",
+                error_code=ErrorCode.AUTH_EMAIL_NOT_VERIFIED,
+                details={
+                    "email": user.email,
+                    "code_sent": sent,
+                    "resend_available_in": remaining,
+                },
+            )
+        return AuthResult(user=user, session=firebase_session, claims=claims)
+
+    async def change_password(
+        self,
+        user: User,
+        *,
+        current_password: str,
+        new_password: str,
+    ) -> AuthResult:
+        if user.auth_provider != AuthProvider.EMAIL.value or not user.email:
+            raise AuthorizationError(
+                "Password changes are only available for email accounts.",
+                error_code=ErrorCode.AUTH_PASSWORD_NOT_SUPPORTED,
+            )
+        if current_password == new_password:
+            raise BadRequestError(
+                "Choose a password different from your current one.",
+                error_code=ErrorCode.AUTH_PASSWORD_UNCHANGED,
+                details={"new_password": "Choose a password different from your current one"},
+            )
+        try:
+            await firebase_auth.sign_in_with_email(user.email, current_password)
+        except AuthenticationError as exc:
+            if exc.error_code == ErrorCode.AUTH_INVALID_CREDENTIALS:
+                raise BadRequestError(
+                    "Current password is incorrect.",
+                    error_code=ErrorCode.AUTH_INVALID_CURRENT_PASSWORD,
+                    details={"current_password": "Current password is incorrect"},
+                ) from exc
+            raise
+
+        firebase_auth.update_firebase_password(user.firebase_uid, new_password)
+        firebase_session = await firebase_auth.sign_in_with_email(user.email, new_password)
+        claims = firebase_auth.verify_id_token(firebase_session.id_token, check_revoked=False)
+        refreshed = await self.upsert_from_claims(claims, mark_login=True)
+        return AuthResult(user=refreshed, session=firebase_session, claims=claims)
+
+    async def refresh(self, refresh_token: str) -> AuthResult:
+        from app.services.verification_service import require_verified_email_session
+
+        firebase_session = await firebase_auth.refresh_id_token(refresh_token)
+        claims = firebase_auth.verify_id_token(firebase_session.id_token, check_revoked=False)
+        user = await self.upsert_from_claims(claims, mark_login=False)
+        require_verified_email_session(user)
         return AuthResult(user=user, session=firebase_session, claims=claims)
 
     async def authenticate_with_id_token(
@@ -116,12 +195,6 @@ class AuthService:
     async def send_verification(self, id_token: str) -> None:
         await firebase_auth.send_email_verification(id_token)
 
-    async def refresh(self, refresh_token: str) -> AuthResult:
-        firebase_session = await firebase_auth.refresh_id_token(refresh_token)
-        claims = firebase_auth.verify_id_token(firebase_session.id_token, check_revoked=False)
-        user = await self.upsert_from_claims(claims, mark_login=False)
-        return AuthResult(user=user, session=firebase_session, claims=claims)
-
     async def verification_status(self, user: User, claims: FirebaseTokenClaims) -> bool:
         verified = bool(claims.email_verified)
         if user.email_verified != verified:
@@ -160,7 +233,9 @@ class AuthService:
                 user.name = name
             elif claims.name and not user.name:
                 user.name = claims.name
-            user.email_verified = claims.email_verified
+            # Email users are verified only through the 6-digit code flow.
+            if user.auth_provider != AuthProvider.EMAIL.value:
+                user.email_verified = claims.email_verified
             user.auth_provider = claims.provider.value
             # Linking an email/social credential to an anonymous identity upgrades the guest.
             if user.is_guest and not is_guest:

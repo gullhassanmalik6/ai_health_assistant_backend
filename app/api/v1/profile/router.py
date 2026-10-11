@@ -2,7 +2,7 @@
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, File, UploadFile, status
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -13,9 +13,11 @@ from app.api.v1.profile.schemas import (
     ConditionData,
     ConditionPatchRequest,
     ConditionWriteRequest,
+    HealthPatchRequest,
     MedicationData,
     MedicationPatchRequest,
     MedicationWriteRequest,
+    PersonalPatchRequest,
     ProfilePatchRequest,
     ProfilePutRequest,
 )
@@ -88,6 +90,96 @@ async def reset_profile(
 ):
     updated = await ProfileService(db).reset_profile(user)
     return _reload_payload(updated, "Profile reset successfully.")
+
+
+@router.patch(
+    "/personal",
+    summary="Update personal information",
+    description="Edit Personal Information: name, date of birth, gender. Omitted fields stay; null clears DOB/gender. Name cannot be cleared.",
+)
+async def patch_personal(
+    body: PersonalPatchRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    updated = await ProfileService(db).update_personal(user, body.model_dump(exclude_unset=True))
+    return _reload_payload(updated, "Personal information updated.")
+
+
+@router.patch(
+    "/health",
+    summary="Update health information",
+    description="Edit Health Information / Profile Setup health section. Allergy and condition arrays replace the full lists atomically.",
+)
+async def patch_health(
+    body: HealthPatchRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    updated = await ProfileService(db).update_health(user, body.model_dump(exclude_unset=True))
+    return _reload_payload(updated, "Health information updated.")
+
+
+@router.post(
+    "/photo",
+    summary="Upload a profile photo",
+    description="multipart/form-data field `file`. JPEG, PNG or WebP up to 5 MB. Stored privately.",
+)
+async def upload_photo(
+    file: UploadFile = File(...),
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.services.photo_service import PhotoService
+
+    data = await file.read()
+    updated = await PhotoService(db).upload(
+        user,
+        filename=file.filename,
+        content_type=file.content_type,
+        data=data,
+    )
+    return _reload_payload(updated, "Profile photo updated.")
+
+
+@router.delete(
+    "/photo",
+    summary="Delete the profile photo",
+    description="Clears the stored file. Not an error if there is no photo.",
+)
+async def delete_photo(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.services.photo_service import PhotoService
+
+    updated = await PhotoService(db).delete(user)
+    return _reload_payload(updated, "Profile photo removed.")
+
+
+@router.get(
+    "/photo/file",
+    summary="Download a signed profile photo",
+    description="Private file. Requires a valid signed query string.",
+    openapi_extra={"security": []},
+)
+async def download_photo(key: str, exp: int, sig: str):
+    from fastapi.responses import Response
+
+    from app.core.exceptions import NotFoundError
+    from app.services.storage.local import get_storage, verify_photo_signature
+
+    if not verify_photo_signature(key, exp, sig):
+        raise NotFoundError("Photo not found.")
+    data = await get_storage().read(key=key)
+    if data is None:
+        raise NotFoundError("Photo not found.")
+    media = "image/jpeg"
+    if key.endswith(".png"):
+        media = "image/png"
+    elif key.endswith(".webp"):
+        media = "image/webp"
+    return Response(content=data, media_type=media)
 
 
 @router.get(

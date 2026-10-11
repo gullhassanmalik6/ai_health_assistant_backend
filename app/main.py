@@ -31,6 +31,9 @@ OPENAPI_TAGS = [
     {"name": "Allergies", "description": "Structured allergy records owned by the authenticated user."},
     {"name": "Conditions", "description": "Structured existing-disease records."},
     {"name": "Medications", "description": "Current medication profile (not prescription analysis)."},
+    {"name": "Categories", "description": "AI doctor categories and concerns."},
+    {"name": "Health Tips", "description": "Category health tips and the daily tip."},
+    {"name": "Notifications", "description": "Notification badge until the full inbox exists."},
     {"name": "Health", "description": "Liveness and readiness probes."},
 ]
 
@@ -57,6 +60,12 @@ async def lifespan(app: FastAPI):
         else:
             await asyncio.to_thread(_upgrade_database)
             logger.info("Database migrations applied.")
+        from app.core.database import get_session_factory
+        from app.services.content_service import seed_content_if_empty
+
+        async with get_session_factory()() as session:
+            await seed_content_if_empty(session)
+            await session.commit()
     except Exception as exc:
         logger.error("Database startup failed: %s", exc)
     yield
@@ -69,9 +78,9 @@ def create_app() -> FastAPI:
         title=settings.APP_NAME,
         version=settings.APP_VERSION,
         description=(
-            "Phase 1 backend for AI Doctor. Flutter and web clients authenticate with "
-            "Firebase and call this API over HTTPS. Passwords, AI keys, and database "
-            "credentials never belong on the client."
+            "AI Doctor API. Flutter authenticates with Firebase and calls this API over HTTPS. "
+            "Email accounts must verify with a 6-digit code before login. "
+            "AI chat endpoints are specified in CHAT_CONTRACT.md and are not implemented yet."
         ),
         docs_url="/docs",
         redoc_url="/redoc",
@@ -87,7 +96,7 @@ def create_app() -> FastAPI:
         allow_origins=settings.cors_origins,
         allow_credentials=True,
         allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-        allow_headers=["Authorization", "Content-Type", "X-Request-ID"],
+        allow_headers=["Authorization", "Content-Type", "X-Request-ID", "X-Timezone"],
         expose_headers=["X-Request-ID"],
     )
     if settings.use_trusted_host_middleware:

@@ -172,6 +172,8 @@ Internal Docker Compose still uses host `db`, which is correct for local compose
 
 ## API documentation
 
+**Flutter developers:** start with [FLUTTER_API_GUIDE.md](./FLUTTER_API_GUIDE.md). It maps every live endpoint to the app screens, includes request examples, splash routing, and what is UI-only until later phases.
+
 - Swagger UI: [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
 - ReDoc: [http://127.0.0.1:8000/redoc](http://127.0.0.1:8000/redoc)
 - OpenAPI JSON: [http://127.0.0.1:8000/openapi.json](http://127.0.0.1:8000/openapi.json)
@@ -220,26 +222,33 @@ Base URL: `/api/v1`
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| POST | `/api/v1/auth/register` | Email/password registration |
-| POST | `/api/v1/auth/login` | Email/password login |
-| POST | `/api/v1/auth/google` | Google (Firebase ID token) |
-| POST | `/api/v1/auth/apple` | Apple (Firebase ID token) |
-| POST | `/api/v1/auth/guest` | Anonymous guest session |
+| POST | `/api/v1/auth/register` | Create account, send 6-digit code, **no tokens** |
+| POST | `/api/v1/auth/login` | Email/password. Unverified → 403 + new code |
+| POST | `/api/v1/auth/verify-email` | Confirm 6-digit code (no token) |
+| POST | `/api/v1/auth/resend-verification` | Resend code (no token, 60s cooldown) |
+| POST | `/api/v1/auth/change-password` | Signed-in email user; returns new tokens |
+| POST | `/api/v1/auth/google` | Google (unused by current app) |
+| POST | `/api/v1/auth/apple` | Apple (unused by current app) |
+| POST | `/api/v1/auth/guest` | Guest (unused by current app) |
 | POST | `/api/v1/auth/logout` | Application-level session invalidation |
-| POST | `/api/v1/auth/forgot-password` | Generic reset email (no account-existence leak) |
+| POST | `/api/v1/auth/forgot-password` | Generic reset email |
 | POST | `/api/v1/auth/reset-password` | Confirm reset with `oob_code` |
-| GET | `/api/v1/auth/verification-status` | `{ "verified": true }` |
-| POST | `/api/v1/auth/send-verification` | Send verification email |
 | GET | `/api/v1/auth/session` | Splash / session bootstrap |
 | POST | `/api/v1/auth/refresh` | Refresh Firebase ID token |
-| GET | `/api/v1/users/me` | Current user |
-| PATCH | `/api/v1/users/me` | Name / onboarding flag |
+| GET | `/api/v1/users/me` | Current user (`profile_setup_seen`) |
+| PATCH | `/api/v1/users/me` | Name / onboarding / `profile_setup_seen` |
 | DELETE | `/api/v1/users/me` | Account deletion |
-| GET/PUT/PATCH/DELETE | `/api/v1/profile` | Health profile (DELETE resets profile, not the account) |
+| GET/PUT/PATCH/DELETE | `/api/v1/profile` | Legacy full profile writes |
+| PATCH | `/api/v1/profile/personal` | Name, DOB, gender |
+| PATCH | `/api/v1/profile/health` | Height, weight, blood group, allergy/condition lists |
+| POST/DELETE | `/api/v1/profile/photo` | Private photo upload / delete |
 | GET | `/api/v1/profile/completion` | Backend-calculated completion |
-| CRUD | `/api/v1/profile/allergies` | Allergies |
-| CRUD | `/api/v1/profile/conditions` | Existing diseases |
-| CRUD | `/api/v1/profile/medications` | Current medications |
+| GET | `/api/v1/categories` | AI doctor categories |
+| GET | `/api/v1/categories/{slug}` | Category detail |
+| GET | `/api/v1/concerns/{id}` | Concern detail |
+| GET | `/api/v1/health-tips/{id}` | Health tip detail |
+| GET | `/api/v1/health-tips/daily` | Health tip of the day |
+| GET | `/api/v1/notifications/unread-count` | Badge (`count: 0` until notifications exist) |
 
 ### Response envelope
 

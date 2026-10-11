@@ -40,6 +40,7 @@ class User(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     email_verified: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     onboarding_completed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    profile_setup_seen: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     token_invalidated_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
@@ -58,12 +59,14 @@ class User(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         back_populates="user",
         cascade="all, delete-orphan",
         lazy="selectin",
+        order_by="UserAllergy.sort_order",
     )
     conditions: Mapped[list[UserCondition]] = relationship(
         "UserCondition",
         back_populates="user",
         cascade="all, delete-orphan",
         lazy="selectin",
+        order_by="UserCondition.sort_order",
     )
     medications: Mapped[list[UserMedication]] = relationship(
         "UserMedication",

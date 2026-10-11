@@ -29,6 +29,7 @@ def user_me_payload(user: User, completion: dict) -> UserMeData:
         is_active=user.is_active,
         email_verified=user.email_verified,
         onboarding_completed=user.onboarding_completed,
+        profile_setup_seen=user.profile_setup_seen,
         profile_completed=completion["is_complete"],
         profile_completion_percentage=completion["percentage"],
         created_at=user.created_at,
@@ -46,6 +47,7 @@ def auth_user_payload(user: User, completion: dict) -> AuthUserPayload:
         is_guest=user.is_guest,
         email_verified=user.email_verified,
         onboarding_completed=user.onboarding_completed,
+        profile_setup_seen=user.profile_setup_seen,
         profile_completion_percentage=completion["percentage"],
         profile_completed=completion["is_complete"],
         created_at=user.created_at,
@@ -76,6 +78,31 @@ def auth_data(user: User, session: FirebaseSession | None, completion: dict) -> 
 
 def profile_payload(user: User, completion: dict) -> ProfileData:
     profile = user.profile
+    photo_url = profile.profile_photo_url if profile else None
+    photo_expires = None
+    if profile and profile.profile_photo_key:
+        from datetime import timedelta
+
+        from app.core.config import settings
+        from app.core.security import utcnow
+        from app.services.storage.local import get_storage
+
+        storage = get_storage()
+        # generate_url is async; build the same signed URL synchronously here.
+        exp = int(utcnow().timestamp()) + settings.PHOTO_SIGNED_URL_TTL_SECONDS
+        from urllib.parse import quote
+
+        from app.services.storage.local import sign_photo_key
+
+        signature = sign_photo_key(profile.profile_photo_key, exp)
+        base = settings.PUBLIC_API_BASE_URL.rstrip("/")
+        photo_url = (
+            f"{base}/api/v1/profile/photo/file?key={quote(profile.profile_photo_key)}"
+            f"&exp={exp}&sig={signature}"
+        )
+        photo_expires = (utcnow() + timedelta(seconds=settings.PHOTO_SIGNED_URL_TTL_SECONDS)).isoformat().replace(
+            "+00:00", "Z"
+        )
     height = None
     weight = None
     if profile and profile.height_value is not None and profile.height_unit:
@@ -95,7 +122,8 @@ def profile_payload(user: User, completion: dict) -> ProfileData:
         blood_group=profile.blood_group if profile else None,
         emergency_contact_name=profile.emergency_contact_name if profile else None,
         emergency_contact_phone=profile.emergency_contact_phone if profile else None,
-        profile_photo_url=profile.profile_photo_url if profile else None,
+        profile_photo_url=photo_url,
+        profile_photo_expires_at=photo_expires,
         onboarding_completed=user.onboarding_completed,
         profile_completed=completion["is_complete"],
         profile_completion_percentage=completion["percentage"],

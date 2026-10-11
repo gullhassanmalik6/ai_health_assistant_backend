@@ -50,6 +50,19 @@ class Settings(BaseSettings):
 
     REQUEST_TIMEOUT_SECONDS: float = 15.0
 
+    APP_SECRET_KEY: str = "dev-only-change-me"
+    PUBLIC_API_BASE_URL: str = "http://127.0.0.1:8000"
+    STORAGE_DIR: str = "var/storage"
+    PHOTO_SIGNED_URL_TTL_SECONDS: int = 3600
+
+    SMTP_HOST: str = ""
+    SMTP_PORT: int = 587
+    SMTP_USERNAME: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_FROM_EMAIL: str = "noreply@aidoctor.local"
+    SMTP_FROM_NAME: str = "AI Doctor"
+    SMTP_USE_TLS: bool = True
+
     @field_validator("DATABASE_URL", "TEST_DATABASE_URL")
     @classmethod
     def normalize_database_urls(cls, value: str) -> str:

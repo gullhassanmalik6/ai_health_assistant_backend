@@ -38,6 +38,9 @@ def test_put_and_get_profile(client, tokens):
     assert data["blood_group"] == "O+"
     assert data["profile_completed"] is True
     assert data["profile_completion_percentage"] == 100
+    assert "emergency_contact" not in client.get(
+        "/api/v1/profile/completion", headers=auth_header("p2-token")
+    ).json()["data"]["completed"]
 
 
 def test_patch_profile_partial(client, tokens):

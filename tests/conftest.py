@@ -15,6 +15,9 @@ os.environ["FIREBASE_API_KEY"] = "test-api-key"
 os.environ["FIREBASE_CLIENT_EMAIL"] = "test@test.iam.gserviceaccount.com"
 os.environ["FIREBASE_PRIVATE_KEY"] = "-----BEGIN PRIVATE KEY-----\\nTEST\\n-----END PRIVATE KEY-----\\n"
 os.environ["LOG_LEVEL"] = "WARNING"
+os.environ["APP_SECRET_KEY"] = "test-secret-key"
+os.environ["STORAGE_DIR"] = "var/test-storage"
+os.environ["PUBLIC_API_BASE_URL"] = "http://testserver"
 
 import pytest
 from fastapi.testclient import TestClient
@@ -61,6 +64,10 @@ def firebase_mocks(monkeypatch, tokens: TokenDirectory):
                 error_code=ErrorCode.AUTH_INVALID_CREDENTIALS,
             )
         uid = f"fb-{email}"
+        for claims in tokens.claims.values():
+            if claims.email == email:
+                uid = claims.uid
+                break
         tokens.register("login-id-token", uid=uid, email=email, email_verified=True)
         return FirebaseSession(
             uid=uid,
@@ -119,6 +126,19 @@ def firebase_mocks(monkeypatch, tokens: TokenDirectory):
     def fake_delete(uid: str) -> None:
         deleted.append(uid)
 
+    def fake_set_verified(uid: str, verified: bool = True) -> None:
+        return None
+
+    def fake_update_password(uid: str, password: str) -> None:
+        return None
+
+    from app.services.email.backend import reset_email_backend
+
+    reset_email_backend()
+    monkeypatch.setattr(
+        "app.services.verification_service.generate_verification_code",
+        lambda length=6: "123456",
+    )
     monkeypatch.setattr("app.dependencies.auth.verify_id_token", fake_verify)
     monkeypatch.setattr("app.core.firebase.verify_id_token", fake_verify)
     monkeypatch.setattr("app.core.firebase.sign_up_with_email", fake_signup)
@@ -129,6 +149,8 @@ def firebase_mocks(monkeypatch, tokens: TokenDirectory):
     monkeypatch.setattr("app.core.firebase.send_email_verification", fake_send_verification)
     monkeypatch.setattr("app.core.firebase.refresh_id_token", fake_refresh)
     monkeypatch.setattr("app.core.firebase.delete_firebase_user", fake_delete)
+    monkeypatch.setattr("app.core.firebase.set_firebase_email_verified", fake_set_verified)
+    monkeypatch.setattr("app.core.firebase.update_firebase_password", fake_update_password)
 
     return {"deleted": deleted, "tokens": tokens}
 

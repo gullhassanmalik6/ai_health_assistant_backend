@@ -17,6 +17,7 @@ class UserMeData(BaseModel):
     is_active: bool
     email_verified: bool
     onboarding_completed: bool
+    profile_setup_seen: bool = False
     profile_completed: bool
     profile_completion_percentage: int
     created_at: datetime
@@ -26,3 +27,4 @@ class UserMeData(BaseModel):
 class UserUpdateRequest(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=MAX_NAME_LENGTH)
     onboarding_completed: bool | None = None
+    profile_setup_seen: bool | None = None

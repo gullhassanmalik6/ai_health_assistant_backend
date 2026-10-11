@@ -6,6 +6,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 from app.core.constants import MAX_NAME_LENGTH, MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH
+from app.utils.validators import validate_password
 
 
 class RegisterRequest(BaseModel):
@@ -25,6 +26,11 @@ class RegisterRequest(BaseModel):
     @classmethod
     def normalize_email(cls, value: EmailStr) -> str:
         return str(value).strip().lower()
+
+    @field_validator("password")
+    @classmethod
+    def check_password(cls, value: str) -> str:
+        return validate_password(value, field="password")
 
 
 class LoginRequest(BaseModel):
@@ -70,6 +76,41 @@ class TokenPayload(BaseModel):
     token_type: str = "Bearer"
 
 
+class RegisterResultData(BaseModel):
+    email: str
+    verification_required: bool = True
+    resend_available_in: int
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str = Field(min_length=1, max_length=MAX_PASSWORD_LENGTH)
+    new_password: str = Field(min_length=1, max_length=MAX_PASSWORD_LENGTH)
+
+    @field_validator("new_password")
+    @classmethod
+    def check_new_password(cls, value: str) -> str:
+        return validate_password(value, field="new_password")
+
+
+class VerifyEmailRequest(BaseModel):
+    email: EmailStr
+    code: str = Field(min_length=1, max_length=12)
+
+    @field_validator("email")
+    @classmethod
+    def normalize_email(cls, value: EmailStr) -> str:
+        return str(value).strip().lower()
+
+
+class ResendVerificationRequest(BaseModel):
+    email: EmailStr
+
+    @field_validator("email")
+    @classmethod
+    def normalize_email(cls, value: EmailStr) -> str:
+        return str(value).strip().lower()
+
+
 class AuthUserPayload(BaseModel):
     id: str
     firebase_uid: str
@@ -79,6 +120,7 @@ class AuthUserPayload(BaseModel):
     is_guest: bool
     email_verified: bool
     onboarding_completed: bool
+    profile_setup_seen: bool = False
     profile_completion_percentage: int
     profile_completed: bool
     created_at: datetime

@@ -4,13 +4,16 @@ from fastapi import APIRouter, Depends, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.auth.schemas import (
+    ChangePasswordRequest,
     ForgotPasswordRequest,
     LoginRequest,
     RefreshTokenRequest,
     RegisterRequest,
+    ResendVerificationRequest,
     ResetPasswordRequest,
     SocialAuthRequest,
     VerificationStatusData,
+    VerifyEmailRequest,
 )
 from app.api.v1.serializers import auth_data, compute_completion
 from app.core.constants import AuthProvider
@@ -45,15 +48,20 @@ async def register(
     body: RegisterRequest,
     db: AsyncSession = Depends(get_db),
 ):
-    result = await AuthService(db).register(
+    payload = await AuthService(db).register(
         email=body.email,
         password=body.password,
         name=body.name,
     )
-    data, code = _auth_response(result, "Account created successfully.", 201)
     from fastapi.responses import JSONResponse
 
-    return JSONResponse(status_code=code, content=data)
+    return JSONResponse(
+        status_code=201,
+        content=success_payload(
+            "Account created. Check your email for a verification code.",
+            payload,
+        ),
+    )
 
 
 @router.post(
@@ -200,6 +208,61 @@ async def verification_status(
     )
 
 
+@router.post(
+    "/change-password",
+    summary="Change password for a signed-in email account",
+    description="Verifies the current password, updates Firebase, and returns new tokens.",
+)
+async def change_password(
+    body: ChangePasswordRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await AuthService(db).change_password(
+        user,
+        current_password=body.current_password,
+        new_password=body.new_password,
+    )
+    data, _ = _auth_response(result, "Password updated.")
+    return data
+
+
+@router.post(
+    "/verify-email",
+    summary="Verify email with a 6-digit code",
+    description="No token. Success does not log the user in.",
+    openapi_extra={"security": []},
+)
+@limiter.limit(auth_limit())
+async def verify_email(
+    request: Request,
+    body: VerifyEmailRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    from app.services.verification_service import VerificationService
+
+    data = await VerificationService(db).verify(body.email, body.code)
+    return success_payload("Email verified.", data)
+
+
+@router.post(
+    "/resend-verification",
+    summary="Resend the email verification code",
+    description="Always returns the same shape so account existence is not leaked.",
+    openapi_extra={"security": []},
+)
+@limiter.limit(auth_limit())
+async def resend_verification(
+    request: Request,
+    body: ResendVerificationRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    from app.services.verification_service import VerificationService
+
+    data = await VerificationService(db).resend(body.email)
+    return success_payload("If the account can be verified, a new code has been sent.", data)
+
+
 @router.get(
     "/session",
     summary="Initialize session (splash)",
@@ -208,6 +271,9 @@ async def verification_status(
 async def session_status(
     user: User = Depends(get_current_user),
 ):
+    from app.services.verification_service import require_verified_email_session
+
+    require_verified_email_session(user)
     completion = compute_completion(user)
     payload = auth_data(user, None, completion)
     return success_payload("Session retrieved.", payload.model_dump(mode="json"))
